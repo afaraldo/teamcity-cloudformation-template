@@ -675,7 +675,7 @@ Resources:
             - "/bin/bash"
             - "-c"
             - !Sub
-              - "if [ ! -f /data/teamcity_server/datadir/lib/jdbc ]; then mkdir -p /data/teamcity_server/datadir/lib/jdbc; curl -o /data/teamcity_server/datadir/lib/jdbc/mysql-connector-java-bin.jar https://repo1.maven.org/maven2/mysql/mysql-connector-java/5.1.43/mysql-connector-java-5.1.43.jar; fi; if [ ! -f /data/teamcity_server/datadir/config/database.properties ]; then mkdir -p /data/teamcity_server/datadir/config; echo connectionProperties.user=teamcity > /data/teamcity_server/datadir/config/database.properties; echo connectionProperties.password=${RDSPassword} >> /data/teamcity_server/datadir/config/database.properties; echo connectionUrl=jdbc:mysql://${RDSAddress}/teamcitydb >> /data/teamcity_server/datadir/config/database.properties; fi; if [ ! -f /data/teamcity_server/datadir/plugins ]; then mkdir -p /data/teamcity_server/datadir/plugins; curl -o /data/teamcity_server/datadir/plugins/aws-ecs.zip https://teamcity.jetbrains.com/guestAuth/app/rest/builds/buildType:TestDrive_TeamCityAmazonEcsPlugin_Build20172x,tag:release/artifacts/content/aws-ecs.zip; fi; echo 'docker-ubuntu-aws' > /opt/teamcity/webapps/ROOT/WEB-INF/DistributionType.txt; exec /run-services.sh;"
+              - "if [ ! -f /data/teamcity_server/datadir/lib/jdbc ]; then mkdir -p /data/teamcity_server/datadir/lib/jdbc; curl -o /data/teamcity_server/datadir/lib/jdbc/mysql-connector-java-bin.jar https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.23/mysql-connector-java-8.0.23.jar; fi; if [ ! -f /data/teamcity_server/datadir/config/database.properties ]; then mkdir -p /data/teamcity_server/datadir/config; echo connectionProperties.user=teamcity > /data/teamcity_server/datadir/config/database.properties; echo connectionProperties.password=${RDSPassword} >> /data/teamcity_server/datadir/config/database.properties; echo connectionUrl=jdbc:mysql://${RDSAddress}/teamcitydb >> /data/teamcity_server/datadir/config/database.properties; fi; if [ ! -f /data/teamcity_server/datadir/plugins ]; then mkdir -p /data/teamcity_server/datadir/plugins; curl -o /data/teamcity_server/datadir/plugins/aws-ecs.zip https://teamcity.jetbrains.com/guestAuth/app/rest/builds/buildType:TestDrive_TeamCityAmazonEcsPlugin_Build20172x,tag:release/artifacts/content/aws-ecs.zip; fi; echo 'docker-ubuntu-aws' > /opt/teamcity/webapps/ROOT/WEB-INF/DistributionType.txt; exec /run-services.sh;"
               - {
                   RDSAddress: !GetAtt [RDSDB, Endpoint.Address],
                   RDSPassword: !Ref 'DBPassword'
@@ -796,7 +796,7 @@ Resources:
       VPCSecurityGroups:
       - Ref: RDSSecurityGroup
       Engine: MySQL
-      EngineVersion: 5.5.54
+      EngineVersion: 8.0
       MasterUsername: teamcity
       MasterUserPassword: !Ref 'DBPassword'
       DBParameterGroupName: !Ref 'RDSParamGroup'
@@ -825,7 +825,7 @@ Resources:
   RDSParamGroup:
     Type: AWS::RDS::DBParameterGroup
     Properties:
-      Family: MySQL5.5
+      Family: MySQL8.0
       Description: !Sub TeamCity ${AWS::StackName} DB
       Parameters:
         long_query_time: "5"
