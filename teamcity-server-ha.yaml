@@ -1220,6 +1220,7 @@ Resources:
       MasterUserPassword: !Ref 'DBPassword'
       DBParameterGroupName: !Ref 'RDSParamGroup'
       PubliclyAccessible: false
+      DBSnapshotIdentifier: 'arn:aws:rds:us-east-1:674183940568:snapshot:test-snapshot-rdsdb-1xbipa4kk6924'
     DeletionPolicy: Snapshot
 
   RDSSecurityGroup:
