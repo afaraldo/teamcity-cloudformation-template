@@ -36,6 +36,9 @@ Parameters:
     Type: String
     Default: t2.medium
     AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
       - t2.medium
       - t2.large
       - t2.xlarge
@@ -75,6 +78,8 @@ Parameters:
     Type: String
     Default: db.t2.medium
     AllowedValues:
+      - db.t2.micro
+      - db.t2.small
       - db.t2.medium
       - db.m4.large
       - db.m4.xlarge
@@ -104,6 +109,8 @@ Parameters:
     Type: String
     Default: t2.medium
     AllowedValues:
+      - t2.nano
+      - t2.micro
       - t2.small
       - t2.medium
       - t2.large
@@ -639,7 +646,7 @@ Resources:
     Properties:
       ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region' , "AMI" ]
       KeyName: !Ref KeyName
-      InstanceType: !Ref ServerInstanceType
+      InstanceType: !Ref AgentInstanceType
       IamInstanceProfile: !Ref ECSNodeInstanceProfile
       NetworkInterfaces:
         - GroupSet:
@@ -654,6 +661,7 @@ Resources:
            #!/bin/bash
             echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
             echo ECS_INSTANCE_ATTRIBUTES={\"teamcity.node-responsibility\": \"buildAgent\"} >> /etc/ecs/ecs.config
+            echo \"limit nofile 262144 262144\" >> /etc/init/docker.conf
       #Tags:
       #  - Key: teamcity.node-responsibility
       #    Value: buildAgent
@@ -794,14 +802,18 @@ Resources:
           Expression: attribute:teamcity.node-responsibility == buildAgent
       ContainerDefinitions:
         - Name: 'teamcity-agent'
-          Image: !Join [':', ['jetbrains/teamcity-agent', !Ref 'TeamCityVersion']]
+          #Image: !Join [':', ['jetbrains/teamcity-agent', !Ref 'TeamCityVersion']] #  jetbrains/teamcity-agent:EAP-linux-sudo
+          Image: !Join [':', ['jetbrains/teamcity-agent', '2020.2.3-linux-sudo']] #  jetbrains/teamcity-agent:EAP-linux-sudo
           User: root
           Cpu: !Ref AgentContainerCpu
           Memory: !Ref AgentContainerMemory
           Essential: true
+          Privileged: true
           Environment:
             - Name: SERVER_URL
               Value: !GetAtt [PublicLoadBalancer, DNSName]
+            - Name: DOCKER_IN_DOCKER
+              Value: start
           LogConfiguration:
             LogDriver: 'awslogs'
             Options:
