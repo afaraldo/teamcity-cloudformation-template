@@ -329,22 +329,22 @@ Resources:
         - Key: Name
           Value: !Sub TeamCity-${AWS::StackName}
 
-  NatGatewayEIP1:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
+  # NatGatewayEIP1:
+  #   Type: AWS::EC2::EIP
+  #   Properties:
+  #     Domain: vpc
 
-  NatGateway:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      SubnetId: !Ref PublicSubnet1
-      AllocationId:
-        Fn::GetAtt:
-        - NatGatewayEIP1
-        - AllocationId
-      Tags:
-        - Key: Name
-          Value: !Sub TeamCity-${AWS::StackName}
+  # NatGateway:
+  #   Type: AWS::EC2::NatGateway
+  #   Properties:
+  #     SubnetId: !Ref PublicSubnet1
+  #     AllocationId:
+  #       Fn::GetAtt:
+  #       - NatGatewayEIP1
+  #       - AllocationId
+  #     Tags:
+  #       - Key: Name
+  #         Value: !Sub TeamCity-${AWS::StackName}
 
   InternetGatewayAttachment:
       Type: AWS::EC2::VPCGatewayAttachment
@@ -412,19 +412,19 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
-  NatGatewayRoute1:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable1
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway
+  # NatGatewayRoute1:
+  #   Type: AWS::EC2::Route
+  #   Properties:
+  #     RouteTableId: !Ref PrivateRouteTable1
+  #     DestinationCidrBlock: 0.0.0.0/0
+  #     NatGatewayId: !Ref NatGateway
 
-  NatGatewayRoute2:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable2
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway
+  # NatGatewayRoute2:
+  #   Type: AWS::EC2::Route
+  #   Properties:
+  #     RouteTableId: !Ref PrivateRouteTable2
+  #     DestinationCidrBlock: 0.0.0.0/0
+  #     NatGatewayId: !Ref NatGateway
 
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -630,7 +630,7 @@ Resources:
         Ebs:
           VolumeSize: 10
           VolumeType: gp2
-          DeleteOnTermination: false
+          DeleteOnTermination: 'true'
       UserData:
         Fn::Base64: !Sub |
            #!/bin/bash
