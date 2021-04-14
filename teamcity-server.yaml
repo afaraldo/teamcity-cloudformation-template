@@ -76,7 +76,7 @@ Parameters:
   DBInstanceType:
     Description: The instance type for the RDS instance for TeamCity Database
     Type: String
-    Default: db.t2.medium
+    Default: db.t2.small
     AllowedValues:
       - db.t2.micro
       - db.t2.small
@@ -641,27 +641,27 @@ Resources:
       #    Value: server
       #    PropagateAtLaunch: true
 
-  AgenteBuildInstance:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region' , "AMI" ]
-      KeyName: !Ref KeyName
-      InstanceType: !Ref AgentInstanceType
-      IamInstanceProfile: !Ref ECSNodeInstanceProfile
-      NetworkInterfaces:
-        - GroupSet:
-            - !Ref TCServerAccessSecurityGroup
-            - !Ref SshAccessSecurityGroup
-          AssociatePublicIpAddress: 'true'
-          DeviceIndex: '0'
-          DeleteOnTermination: 'true'
-          SubnetId: !Ref PublicSubnet1
-      UserData:
-        Fn::Base64: !Sub |
-           #!/bin/bash
-            echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-            echo ECS_INSTANCE_ATTRIBUTES={\"teamcity.node-responsibility\": \"buildAgent\"} >> /etc/ecs/ecs.config
-            echo \"limit nofile 262144 262144\" >> /etc/init/docker.conf
+  # AgenteBuildInstance:
+  #   Type: AWS::EC2::Instance
+  #   Properties:
+  #     ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region' , "AMI" ]
+  #     KeyName: !Ref KeyName
+  #     InstanceType: !Ref AgentInstanceType
+  #     IamInstanceProfile: !Ref ECSNodeInstanceProfile
+  #     NetworkInterfaces:
+  #       - GroupSet:
+  #           - !Ref TCServerAccessSecurityGroup
+  #           - !Ref SshAccessSecurityGroup
+  #         AssociatePublicIpAddress: 'true'
+  #         DeviceIndex: '0'
+  #         DeleteOnTermination: 'true'
+  #         SubnetId: !Ref PublicSubnet1
+  #     UserData:
+  #       Fn::Base64: !Sub |
+  #          #!/bin/bash
+  #           echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+  #           echo ECS_INSTANCE_ATTRIBUTES={\"teamcity.node-responsibility\": \"buildAgent\"} >> /etc/ecs/ecs.config
+  #           echo \"limit nofile 262144 262144\" >> /etc/init/docker.conf
       #Tags:
       #  - Key: teamcity.node-responsibility
       #    Value: buildAgent
@@ -763,7 +763,22 @@ Resources:
             - "/bin/bash"
             - "-c"
             - !Sub
-              - "if [ ! -f /data/teamcity_server/datadir/lib/jdbc ]; then mkdir -p /data/teamcity_server/datadir/lib/jdbc; curl -o /data/teamcity_server/datadir/lib/jdbc/mysql-connector-java-bin.jar https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.23/mysql-connector-java-8.0.23.jar; fi; if [ ! -f /data/teamcity_server/datadir/config/database.properties ]; then mkdir -p /data/teamcity_server/datadir/config; echo connectionProperties.user=teamcity > /data/teamcity_server/datadir/config/database.properties; echo connectionProperties.password=${RDSPassword} >> /data/teamcity_server/datadir/config/database.properties; echo connectionUrl=jdbc:mysql://${RDSAddress}/teamcitydb >> /data/teamcity_server/datadir/config/database.properties; fi; if [ ! -f /data/teamcity_server/datadir/plugins ]; then mkdir -p /data/teamcity_server/datadir/plugins; curl -o /data/teamcity_server/datadir/plugins/aws-ecs.zip https://teamcity.jetbrains.com/guestAuth/app/rest/builds/buildType:TestDrive_TeamCityAmazonEcsPlugin_Build20172x,tag:release/artifacts/content/aws-ecs.zip; fi; echo 'docker-ubuntu-aws' > /opt/teamcity/webapps/ROOT/WEB-INF/DistributionType.txt; exec /run-services.sh;"
+              - "if [ ! -f /data/teamcity_server/datadir/lib/jdbc ]; then
+                  mkdir -p /data/teamcity_server/datadir/lib/jdbc;
+                  curl -o /data/teamcity_server/datadir/lib/jdbc/mysql-connector-java-bin.jar https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.23/mysql-connector-java-8.0.23.jar;
+                fi;
+                if [ ! -f /data/teamcity_server/datadir/config/database.properties ]; then
+                  mkdir -p /data/teamcity_server/datadir/config;
+                  echo connectionProperties.user=teamcity > /data/teamcity_server/datadir/config/database.properties;
+                  echo connectionProperties.password=${RDSPassword} >> /data/teamcity_server/datadir/config/database.properties;
+                  echo connectionUrl=jdbc:mysql://${RDSAddress}/teamcitydb >> /data/teamcity_server/datadir/config/database.properties;
+                fi;
+                if [ ! -f /data/teamcity_server/datadir/plugins ]; then
+                  mkdir -p /data/teamcity_server/datadir/plugins;
+                  curl -o /data/teamcity_server/datadir/plugins/aws-ecs.zip https://teamcity.jetbrains.com/guestAuth/app/rest/builds/buildType:TestDrive_TeamCityAmazonEcsPlugin_Build20172x,tag:release/artifacts/content/aws-ecs.zip;
+                fi;
+                echo 'docker-ubuntu-aws' > /opt/teamcity/webapps/ROOT/WEB-INF/DistributionType.txt;
+                exec /run-services.sh;"
               - {
                   RDSAddress: !GetAtt [RDSDB, Endpoint.Address],
                   RDSPassword: !Ref 'DBPassword'
@@ -790,6 +805,10 @@ Resources:
               awslogs-group: !Ref ECSLogGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: 'aws/ecs/teamcity-server'
+          ulimits:
+            - name: nofile
+              hardLimit: 262144
+              softLimit: 262144
 
   AgentTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -847,22 +866,22 @@ Resources:
           TargetGroupArn:
             Ref: TCServerNodeTargetGroup
 
-  AgentService:
-    Type: AWS::ECS::Service
-    Condition: ShouldLaunchAgents
-    #DependsOn:
-    #  - AgentAutoScalingGroup
-    Properties:
-          ServiceName: !Join ['_', [!Ref 'AWS::StackName', 'TeamCityAgents']]
-          Cluster:
-            Ref: ECSCluster
-          LaunchType: EC2
-          DeploymentConfiguration:
-            MaximumPercent: 100
-            MinimumHealthyPercent: 0
-          DesiredCount: !Ref AgentNumber
-          TaskDefinition:
-            Ref: "AgentTaskDefinition"
+  # AgentService:
+  #   Type: AWS::ECS::Service
+  #   Condition: ShouldLaunchAgents
+  #   #DependsOn:
+  #   #  - AgentAutoScalingGroup
+  #   Properties:
+  #         ServiceName: !Join ['_', [!Ref 'AWS::StackName', 'TeamCityAgents']]
+  #         Cluster:
+  #           Ref: ECSCluster
+  #         LaunchType: EC2
+  #         DeploymentConfiguration:
+  #           MaximumPercent: 100
+  #           MinimumHealthyPercent: 0
+  #         DesiredCount: !Ref AgentNumber
+  #         TaskDefinition:
+  #           Ref: "AgentTaskDefinition"
 
   SshAccessSecurityGroup:
     Type: AWS::EC2::SecurityGroup
