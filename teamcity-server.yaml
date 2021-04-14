@@ -76,7 +76,7 @@ Parameters:
   DBInstanceType:
     Description: The instance type for the RDS instance for TeamCity Database
     Type: String
-    Default: db.t2.medium
+    Default: db.t2.small
     AllowedValues:
       - db.t2.micro
       - db.t2.small
@@ -148,7 +148,7 @@ Parameters:
 
   AgentNumber:
     Type: Number
-    Default: 1
+    Default: 0
     Description: Number of build agents to start. Set '0' to start TeamCity server without build agents connected.
 
   AgentContainerCpu:
@@ -641,27 +641,27 @@ Resources:
       #    Value: server
       #    PropagateAtLaunch: true
 
-  AgenteBuildInstance:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region' , "AMI" ]
-      KeyName: !Ref KeyName
-      InstanceType: !Ref AgentInstanceType
-      IamInstanceProfile: !Ref ECSNodeInstanceProfile
-      NetworkInterfaces:
-        - GroupSet:
-            - !Ref TCServerAccessSecurityGroup
-            - !Ref SshAccessSecurityGroup
-          AssociatePublicIpAddress: 'true'
-          DeviceIndex: '0'
-          DeleteOnTermination: 'true'
-          SubnetId: !Ref PublicSubnet1
-      UserData:
-        Fn::Base64: !Sub |
-           #!/bin/bash
-            echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-            echo ECS_INSTANCE_ATTRIBUTES={\"teamcity.node-responsibility\": \"buildAgent\"} >> /etc/ecs/ecs.config
-            echo \"limit nofile 262144 262144\" >> /etc/init/docker.conf
+  # AgentBuildInstance:
+  #   Type: AWS::EC2::Instance
+  #   Properties:
+  #     ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region' , "AMI" ]
+  #     KeyName: !Ref KeyName
+  #     InstanceType: !Ref AgentInstanceType
+  #     IamInstanceProfile: !Ref ECSNodeInstanceProfile
+  #     NetworkInterfaces:
+  #       - GroupSet:
+  #           - !Ref TCServerAccessSecurityGroup
+  #           - !Ref SshAccessSecurityGroup
+  #         AssociatePublicIpAddress: 'true'
+  #         DeviceIndex: '0'
+  #         DeleteOnTermination: 'true'
+  #         SubnetId: !Ref PublicSubnet1
+  #     UserData:
+  #       Fn::Base64: !Sub |
+  #          #!/bin/bash
+  #           echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+  #           echo ECS_INSTANCE_ATTRIBUTES={\"teamcity.node-responsibility\": \"buildAgent\"} >> /etc/ecs/ecs.config
+  #           echo \"limit nofile 262144 262144\" >> /etc/init/docker.conf
       #Tags:
       #  - Key: teamcity.node-responsibility
       #    Value: buildAgent
@@ -763,7 +763,22 @@ Resources:
             - "/bin/bash"
             - "-c"
             - !Sub
-              - "if [ ! -f /data/teamcity_server/datadir/lib/jdbc ]; then mkdir -p /data/teamcity_server/datadir/lib/jdbc; curl -o /data/teamcity_server/datadir/lib/jdbc/mysql-connector-java-bin.jar https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.23/mysql-connector-java-8.0.23.jar; fi; if [ ! -f /data/teamcity_server/datadir/config/database.properties ]; then mkdir -p /data/teamcity_server/datadir/config; echo connectionProperties.user=teamcity > /data/teamcity_server/datadir/config/database.properties; echo connectionProperties.password=${RDSPassword} >> /data/teamcity_server/datadir/config/database.properties; echo connectionUrl=jdbc:mysql://${RDSAddress}/teamcitydb >> /data/teamcity_server/datadir/config/database.properties; fi; if [ ! -f /data/teamcity_server/datadir/plugins ]; then mkdir -p /data/teamcity_server/datadir/plugins; curl -o /data/teamcity_server/datadir/plugins/aws-ecs.zip https://teamcity.jetbrains.com/guestAuth/app/rest/builds/buildType:TestDrive_TeamCityAmazonEcsPlugin_Build20172x,tag:release/artifacts/content/aws-ecs.zip; fi; echo 'docker-ubuntu-aws' > /opt/teamcity/webapps/ROOT/WEB-INF/DistributionType.txt; exec /run-services.sh;"
+              - "if [ ! -f /data/teamcity_server/datadir/lib/jdbc ]; then
+                  mkdir -p /data/teamcity_server/datadir/lib/jdbc;
+                  curl -o /data/teamcity_server/datadir/lib/jdbc/mysql-connector-java-bin.jar https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.23/mysql-connector-java-8.0.23.jar;
+                fi;
+                if [ ! -f /data/teamcity_server/datadir/config/database.properties ]; then
+                  mkdir -p /data/teamcity_server/datadir/config;
+                  echo connectionProperties.user=teamcity > /data/teamcity_server/datadir/config/database.properties;
+                  echo connectionProperties.password=${RDSPassword} >> /data/teamcity_server/datadir/config/database.properties;
+                  echo connectionUrl=jdbc:mysql://${RDSAddress}/teamcitydb >> /data/teamcity_server/datadir/config/database.properties;
+                fi;
+                if [ ! -f /data/teamcity_server/datadir/plugins ]; then
+                  mkdir -p /data/teamcity_server/datadir/plugins;
+                  curl -o /data/teamcity_server/datadir/plugins/aws-ecs.zip https://teamcity.jetbrains.com/guestAuth/app/rest/builds/buildType:TestDrive_TeamCityAmazonEcsPlugin_Build20172x,tag:release/artifacts/content/aws-ecs.zip;
+                fi;
+                echo 'docker-ubuntu-aws' > /opt/teamcity/webapps/ROOT/WEB-INF/DistributionType.txt;
+                exec /run-services.sh;"
               - {
                   RDSAddress: !GetAtt [RDSDB, Endpoint.Address],
                   RDSPassword: !Ref 'DBPassword'
@@ -793,13 +808,31 @@ Resources:
 
   AgentTaskDefinition:
     Type: AWS::ECS::TaskDefinition
-    Condition: ShouldLaunchAgents
-    DependsOn:
-      - TCServerNodeService
+    #Condition: ShouldLaunchAgents
+    #DependsOn:
+    #  - TCServerNodeService
     Properties:
-      PlacementConstraints:
-        - Type: memberOf
-          Expression: attribute:teamcity.node-responsibility == buildAgent
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - "EC2"
+      # 256 (.25 vCPU) - Available memory values: 0.5GB, 1GB, 2GB
+      # 512 (.5 vCPU) - Available memory values: 1GB, 2GB, 3GB, 4GB
+      # 1024 (1 vCPU) - Available memory values: 2GB, 3GB, 4GB, 5GB, 6GB, 7GB, 8GB
+      # 2048 (2 vCPU) - Available memory values: Between 4GB and 16GB in 1GB increments
+      # 4096 (4 vCPU) - Available memory values: Between 8GB and 30GB in 1GB increments
+      Cpu: !Ref AgentContainerCpu
+      # 0.5GB, 1GB, 2GB - Available cpu values: 256 (.25 vCPU)
+      # 1GB, 2GB, 3GB, 4GB - Available cpu values: 512 (.5 vCPU)
+      # 2GB, 3GB, 4GB, 5GB, 6GB, 7GB, 8GB - Available cpu values: 1024 (1 vCPU)
+      # Between 4GB and 16GB in 1GB increments - Available cpu values: 2048 (2 vCPU)
+      # Between 8GB and 30GB in 1GB increments - Available cpu values: 4096 (4 vCPU)
+      Memory: !Ref AgentContainerMemory
+      # A role needed by ECS.
+      # "The ARN of the task execution role that containers in this task can assume. All containers in this task are granted the permissions that are specified in this role."
+      # "There is an optional task execution IAM role that you can specify with Fargate to allow your Fargate tasks to make API calls to Amazon ECR."
+      ExecutionRoleArn: !Ref ExecutionRole
+      # "The Amazon Resource Name (ARN) of an AWS Identity and Access Management (IAM) role that grants containers in the task permission to call AWS APIs on your behalf."
+      TaskRoleArn: !Ref TaskRole
       ContainerDefinitions:
         - Name: 'teamcity-agent'
           #Image: !Join [':', ['jetbrains/teamcity-agent', !Ref 'TeamCityVersion']] #  jetbrains/teamcity-agent:EAP-linux-sudo
@@ -808,7 +841,9 @@ Resources:
           Cpu: !Ref AgentContainerCpu
           Memory: !Ref AgentContainerMemory
           Essential: true
-          Privileged: true
+          Privileged: true # Need for docker in docker
+          PortMappings:
+            - ContainerPort: 9090
           Environment:
             - Name: SERVER_URL
               Value: !GetAtt [PublicLoadBalancer, DNSName]
@@ -820,6 +855,39 @@ Resources:
               awslogs-group: !Ref ECSLogGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: 'aws/ecs/teamcity-agent'
+          ulimits:
+            - name: nofile
+              hardLimit: 262144
+              softLimit: 262144
+
+  # A role needed by ECS
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['', [!Ref 'AWS::StackName', ExecutionRole]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+  # A role for the containers
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['', [!Ref 'AWS::StackName', TaskRole]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      # ManagedPolicyArns:
+      #   -
+      # Policies:
+      #   -
 
   TCServerNodeService:
     Type: AWS::ECS::Service
@@ -847,22 +915,31 @@ Resources:
           TargetGroupArn:
             Ref: TCServerNodeTargetGroup
 
-  AgentService:
-    Type: AWS::ECS::Service
-    Condition: ShouldLaunchAgents
-    #DependsOn:
-    #  - AgentAutoScalingGroup
-    Properties:
-          ServiceName: !Join ['_', [!Ref 'AWS::StackName', 'TeamCityAgents']]
-          Cluster:
-            Ref: ECSCluster
-          LaunchType: EC2
-          DeploymentConfiguration:
-            MaximumPercent: 100
-            MinimumHealthyPercent: 0
-          DesiredCount: !Ref AgentNumber
-          TaskDefinition:
-            Ref: "AgentTaskDefinition"
+  # AgentService:
+  #   Type: AWS::ECS::Service
+  #   #Condition: ShouldLaunchAgents
+  #   #DependsOn:
+  #   #  - AgentAutoScalingGroup
+  #   Properties:
+  #     ServiceName: !Join ['_', [!Ref 'AWS::StackName', 'TeamCityAgents']]
+  #     Cluster:
+  #       Ref: ECSCluster
+  #     LaunchType: FARGATE
+  #     DeploymentConfiguration:
+  #       MaximumPercent: 100
+  #       MinimumHealthyPercent: 0
+  #     DesiredCount: !Ref AgentNumber
+  #     TaskDefinition:
+  #       Ref: "AgentTaskDefinition"
+  #     NetworkConfiguration: 
+  #       AwsvpcConfiguration:
+  #         # change to DISABLED if you're using private subnets that have access to a NAT gateway
+  #         AssignPublicIp: ENABLED
+  #         Subnets:
+  #           - !Ref PublicSubnet1
+  #           - !Ref PublicSubnet2
+  #         SecurityGroups:
+  #           - !Ref TCServerAccessSecurityGroup
 
   SshAccessSecurityGroup:
     Type: AWS::EC2::SecurityGroup
