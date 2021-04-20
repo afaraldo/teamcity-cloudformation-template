@@ -641,27 +641,27 @@ Resources:
       #    Value: server
       #    PropagateAtLaunch: true
 
-  # AgenteBuildInstance:
-  #   Type: AWS::EC2::Instance
-  #   Properties:
-  #     ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region' , "AMI" ]
-  #     KeyName: !Ref KeyName
-  #     InstanceType: !Ref AgentInstanceType
-  #     IamInstanceProfile: !Ref ECSNodeInstanceProfile
-  #     NetworkInterfaces:
-  #       - GroupSet:
-  #           - !Ref TCServerAccessSecurityGroup
-  #           - !Ref SshAccessSecurityGroup
-  #         AssociatePublicIpAddress: 'true'
-  #         DeviceIndex: '0'
-  #         DeleteOnTermination: 'true'
-  #         SubnetId: !Ref PublicSubnet1
-  #     UserData:
-  #       Fn::Base64: !Sub |
-  #          #!/bin/bash
-  #           echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-  #           echo ECS_INSTANCE_ATTRIBUTES={\"teamcity.node-responsibility\": \"buildAgent\"} >> /etc/ecs/ecs.config
-  #           echo \"limit nofile 262144 262144\" >> /etc/init/docker.conf
+  AgenteBuildInstance:
+   Type: AWS::EC2::Instance
+   Properties:
+     ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region' , "AMI" ]
+     KeyName: !Ref KeyName
+     InstanceType: !Ref AgentInstanceType
+     IamInstanceProfile: !Ref ECSNodeInstanceProfile
+     NetworkInterfaces:
+       - GroupSet:
+           - !Ref TCServerAccessSecurityGroup
+           - !Ref SshAccessSecurityGroup
+         AssociatePublicIpAddress: 'true'
+         DeviceIndex: '0'
+         DeleteOnTermination: 'true'
+         SubnetId: !Ref PublicSubnet1
+     UserData:
+       Fn::Base64: !Sub |
+          #!/bin/bash
+           echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+           echo ECS_INSTANCE_ATTRIBUTES={\"teamcity.node-responsibility\": \"buildAgent\"} >> /etc/ecs/ecs.config
+           echo \"limit nofile 262144 262144\" >> /etc/init/docker.conf
       #Tags:
       #  - Key: teamcity.node-responsibility
       #    Value: buildAgent
@@ -812,7 +812,7 @@ Resources:
 
   AgentTaskDefinition:
     Type: AWS::ECS::TaskDefinition
-    Condition: ShouldLaunchAgents
+    #Condition: ShouldLaunchAgents
     DependsOn:
       - TCServerNodeService
     Properties:
@@ -866,22 +866,22 @@ Resources:
           TargetGroupArn:
             Ref: TCServerNodeTargetGroup
 
-  # AgentService:
-  #   Type: AWS::ECS::Service
-  #   Condition: ShouldLaunchAgents
-  #   #DependsOn:
-  #   #  - AgentAutoScalingGroup
-  #   Properties:
-  #         ServiceName: !Join ['_', [!Ref 'AWS::StackName', 'TeamCityAgents']]
-  #         Cluster:
-  #           Ref: ECSCluster
-  #         LaunchType: EC2
-  #         DeploymentConfiguration:
-  #           MaximumPercent: 100
-  #           MinimumHealthyPercent: 0
-  #         DesiredCount: !Ref AgentNumber
-  #         TaskDefinition:
-  #           Ref: "AgentTaskDefinition"
+  AgentService:
+   Type: AWS::ECS::Service
+   Condition: ShouldLaunchAgents
+   #DependsOn:
+   #  - AgentAutoScalingGroup
+   Properties:
+         ServiceName: !Join ['_', [!Ref 'AWS::StackName', 'TeamCityAgents']]
+         Cluster:
+           Ref: ECSCluster
+         LaunchType: EC2
+         DeploymentConfiguration:
+           MaximumPercent: 100
+           MinimumHealthyPercent: 0
+         DesiredCount: !Ref AgentNumber
+         TaskDefinition:
+           Ref: "AgentTaskDefinition"
 
   SshAccessSecurityGroup:
     Type: AWS::EC2::SecurityGroup
