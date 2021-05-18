@@ -1,0 +1,468 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  This template deploys a Test Server installation of Inspira Hospital S.A.
+
+Parameters:
+
+  KeyName:
+    Description: The existing EC2 KeyPair for SSH access to the EC2 instance running container with Inspira server and agents
+    Type: AWS::EC2::KeyPair::KeyName
+    AllowedPattern: ".+"
+
+  ServerInstanceType:
+    Description: The instance type for the EC2 instance running container with Inspira Server
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t3a.medium
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: ""
+        Parameters:
+          - KeyName
+          - SshAccessSourceIPRange
+
+    ParameterLabels:
+      ServerInstanceType:
+        default: "EC2 Instance Type"
+      KeyName:
+        default: "EC2 KeyPair (required)"
+
+Mappings:
+
+  AWSRegionToAMI:
+    us-east-1:
+      AMI: ami-048f6ed62451373d9
+    us-east-2:
+      AMI: ami-089fe97bc00bff7cc
+
+Resources:
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub Inspira-${AWS::StackName}
+  MyNACL:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref VPC
+
+  InboundRule1:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId:
+        Ref: MyNACL
+      RuleNumber: 100
+      Protocol: 6   # TCP
+      RuleAction: allow
+      Egress: false
+      CidrBlock: 10.0.0.0/24
+      PortRange:
+        From: 22
+        To: 22
+  InboundRule2:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId:
+        Ref: MyNACL
+      RuleNumber: 101
+      Protocol: 6   # TCP
+      RuleAction: allow
+      Egress: false
+      CidrBlock: 10.0.0.0/24
+      PortRange:
+        From: 80
+        To: 80
+  OutboundRule1:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId:
+        Ref: MyNACL
+      RuleNumber: 102
+      Protocol: 6  # tcp
+      Egress: true
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+      PortRange:
+        From: 22  # client will be using ephemeral port, using 80 or 22 here will not work
+        To: 22
+  OutboundRule2:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId:
+        Ref: MyNACL
+      RuleNumber: 103
+      Protocol: 6  # tcp
+      Egress: true
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+      PortRange:
+        From: 80  # client will be using ephemeral port, using 80 or 22 here will not work
+        To: 80
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub Inspira-${AWS::StackName}
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  IP:
+    Type: AWS::EC2::EIP
+    DependsOn:
+      - InternetGatewayAttachment
+      - EC2Instance
+    Properties:
+      InstanceId: !Ref EC2Instance
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub Inspira ${AWS::StackName} Public Subnet (AZ1)
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub Inspira ${AWS::StackName} Private Subnet (AZ1)
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub Inspira ${AWS::StackName} Public Routes
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub Inspira ${AWS::StackName} Private Routes (AZ1)
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AWSRegionToAMI, !Ref 'AWS::Region' , "AMI" ]
+      KeyName: !Ref KeyName
+      InstanceType: !Ref ServerInstanceType
+      #IamInstanceProfile: !Ref ECSNodeInstanceProfile
+      NetworkInterfaces:
+        - GroupSet:
+            - !Ref InspiraServerAccessSecurityGroup
+            - !Ref SshAccessSecurityGroup
+          AssociatePublicIpAddress: 'true'
+          DeviceIndex: '0'
+          DeleteOnTermination: 'true'
+          SubnetId: !Ref PublicSubnet1
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt update
+          apt upgrade -y
+          apt install -y docker
+          apt install -y docker-compose
+
+
+  InspiraServerAccessSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref 'VPC'
+      GroupDescription: !Sub Inspira ${AWS::StackName} Server
+
+  InspiraServerSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: "-1"
+      GroupId:
+        Fn::GetAtt:
+          - InspiraServerAccessSecurityGroup
+          - GroupId
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+          - InspiraServerAccessSecurityGroup
+          - GroupId
+
+  SshAccessSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SSH access SG
+      VpcId: !Ref 'VPC'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  #  Logging
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 1
+
+  # Function
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: lambda-role
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLambdaExecute
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/AmazonKinesisFullAccess
+      Path: /
+
+  runningInstanceFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.6
+      Role:
+        Fn::GetAtt:
+          - LambdaRole
+          - Arn
+      Handler: lambda_handler
+      Code:
+        ZipFile: |
+          import boto3
+          import sys
+          from datetime import date
+          from datetime import datetime
+
+          ec2 = boto3.client('ec2')
+
+          #status = {'InstanceStatuses': [{'AvailabilityZone': 'us-east-2c', 'InstanceId': 'i-07dd60c6ab3ea79b3', 'InstanceState': {'Code': 16, 'Name': 'running'}, 'InstanceStatus': {'Details': [{'Name': 'reachability', 'Status': 'passed'}], 'Status': 'ok'}, 'SystemStatus': {'Details': [{'Name': 'reachability', 'Status': 'passed'}], 'Status': 'ok'}}], 'ResponseMetadata': {'RequestId': 'fbc38ca7-2d95-4b17-b61a-4a02bc0ae450', 'HTTPStatusCode': 200, 'HTTPHeaders': {'x-amzn-requestid': 'fbc38ca7-2d95-4b17-b61a-4a02bc0ae450', 'content-type': 'text/xml;charset=UTF-8', 'content-length': '1139', 'date': 'Wed, 11 Nov 2020 11:07:30 GMT', 'server': 'AmazonEC2'}, 'RetryAttempts': 0}}
+          def get_instance_status(id):
+              try:
+                  return ec2.describe_instance_status(InstanceIds = [id])
+              except Exception as e2:
+                  error2 = "Error2: %s" % str(e2)
+                  print(error2)
+                  sys.exit(0)
+
+          def is_running(id):
+              status = get_instance_status(id)
+              instance_is_running = False
+              for stat in status['InstanceStatuses']:
+                  if stat['InstanceState']['Name'] == 'running' :
+                      instance_is_running = True
+              return instance_is_running
+
+          def is_valid_day():
+              run = True
+              feriados = ['2020-12-08', '2020-12-25', '2021-01-01']
+              now = datetime.now().strftime('%Y-%m-%d')
+              day_of_week= datetime.now().strftime('%A')
+              if now in feriados:
+                  run = False
+                  print("Hoy es feriado, los servidores no se ejecutan en feriado")
+              if day_of_week == "Saturday" or day_of_week == "Sunday":
+                  run = False
+                  print("Los servidores no se ejecutan durante el fin de semana")
+              return run
+
+          def run_instance(id):
+              print("Iniciando Instancia: ", id)
+              try:
+                   ec2.start_instances(InstanceIds = [id])
+              except Exception as e2:
+                  error2 = "Error2: %s" % str(e2)
+                  print(error2)
+
+          def lambda_handler(event, context):
+              #Inspira test server #######################################################
+              id_instance = 'i-0e290ef882bbe191e'
+              if(not(is_running(id_instance)) and is_valid_day()):
+                  run_instance(id_instance)
+      Description: This function is used for starting a instance.
+
+  stoppingInstanceFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.6
+      Role:
+        Fn::GetAtt:
+          - LambdaRole
+          - Arn
+      Handler: lambda_handler
+      Code:
+        ZipFile: |
+          import boto3
+          import sys
+          from datetime import date
+          from datetime import datetime
+
+          ec2 = boto3.client('ec2')
+
+          #status = {'InstanceStatuses': [{'AvailabilityZone': 'us-east-2c', 'InstanceId': 'i-07dd60c6ab3ea79b3', 'InstanceState': {'Code': 16, 'Name': 'running'}, 'InstanceStatus': {'Details': [{'Name': 'reachability', 'Status': 'passed'}], 'Status': 'ok'}, 'SystemStatus': {'Details': [{'Name': 'reachability', 'Status': 'passed'}], 'Status': 'ok'}}], 'ResponseMetadata': {'RequestId': 'fbc38ca7-2d95-4b17-b61a-4a02bc0ae450', 'HTTPStatusCode': 200, 'HTTPHeaders': {'x-amzn-requestid': 'fbc38ca7-2d95-4b17-b61a-4a02bc0ae450', 'content-type': 'text/xml;charset=UTF-8', 'content-length': '1139', 'date': 'Wed, 11 Nov 2020 11:07:30 GMT', 'server': 'AmazonEC2'}, 'RetryAttempts': 0}}
+          def get_instance_status(id):
+              try:
+                  return ec2.describe_instance_status(InstanceIds = [id])
+              except Exception as e2:
+                  error2 = "Error2: %s" % str(e2)
+                  print(error2)
+                  sys.exit(0)
+
+          def get_vpn_connection_status(client_vpn_enpoint_id):
+              try:
+                  value = ec2.describe_client_vpn_connections(ClientVpnEndpointId=client_vpn_enpoint_id)
+                  return value
+              except Exception as e2:
+                  error2 = "Error2: %s" % str(e2)
+                  print(error2)
+                  sys.exit(0)
+
+          def is_running(id):
+              status = get_instance_status(id)
+              instance_is_running = False
+              for stat in status['InstanceStatuses']:
+                  if stat['InstanceState']['Name'] == 'running' :
+                      instance_is_running = True
+              return instance_is_running
+
+          def stop_my_instance(id):
+              print("Parando Instancia: ", id)
+              try:
+                   ec2.stop_instances(InstanceIds = [id])
+              except Exception as e2:
+                  error2 = "Error2: %s" % str(e2)
+                  print(error2)
+
+          def close_client_vpn_connetions(client_vpn_enpoint_id):
+              statuses = get_vpn_connection_status(client_vpn_enpoint_id)
+              for conn in statuses['Connections']:
+                  status = conn['Status']['Code']
+                  if status == 'active':
+                      conn_id = conn['ConnectionId']
+                      print('Cerrando connexion VPN: ', conn_id)
+                      try:
+                          ec2.terminate_client_vpn_connections(ClientVpnEndpointId=str(client_vpn_enpoint_id), ConnectionId=str(conn_id))
+                      except Exception as e3:
+                          error3 = "Error3: %s" % str(e3)
+                          print(error3)
+
+          def lambda_handler(event, context):
+              #Client vpn connections ####################################################
+              #close_client_vpn_connetions('cvpn-endpoint-07530e15200d15851')
+
+              #Inspira test server #######################################################
+              id_instance = 'i-0e290ef882bbe191e' #i-0e290ef882bbe191e
+              if is_running(id_instance):
+                  stop_my_instance(id_instance)
+      Description: This function is used for stopping a instance.
+
+  ScheduledRuleRunningFunction:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "ScheduledRule"
+      ScheduleExpression: "rate(10 minutes)"
+      State: "ENABLED"
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - "runningInstanceFunction"
+              - "Arn"
+          Id: "runningInstanceFunction"
+
+  ScheduledRuleStoppingFunction:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "ScheduledRule"
+      ScheduleExpression: "rate(15 minutes)"
+      State: "ENABLED"
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - "stoppingInstanceFunction"
+              - "Arn"
+          Id: "stoppingInstanceFunction"
+
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref runningInstanceFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn:
+        Fn::GetAtt:
+          - "ScheduledRuleRunningFunction"
+          - "Arn"
+
+  PermissionForEventsToInvokeLambda1:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref stoppingInstanceFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn:
+        Fn::GetAtt:
+          - "ScheduledRuleStoppingFunction"
+          - "Arn"
+Outputs:
+  InspiraServerUrl:
+    Description: Inspira Server URL
+    Value: !Join ["", [ "http://"  , !GetAtt [EC2Instance, PublicIp], "/" ]]
