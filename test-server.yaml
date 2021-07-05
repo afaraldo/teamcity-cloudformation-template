@@ -420,7 +420,7 @@ Resources:
     Properties:
       Description: "ScheduledRule"
       ScheduleExpression: "rate(10 minutes)"
-      State: "ENABLED"
+      State: "DISABLED"
       Targets:
         - Arn:
             Fn::GetAtt:
@@ -433,7 +433,7 @@ Resources:
     Properties:
       Description: "ScheduledRule"
       ScheduleExpression: "rate(15 minutes)"
-      State: "ENABLED"
+      State: "DISABLED"
       Targets:
         - Arn:
             Fn::GetAtt:
